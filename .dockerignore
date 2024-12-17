@@ -1,0 +1,27 @@
+*
+!.env
+!app.py
+!requirements.txt
+!processor.py
+!database.py
+!Dockerfile
+!docker-compose.yml
+!nltk_data/
+
+# Explicitly ignore these folders even if they match above patterns
+extracted_images/
+uploaded_files/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+.venv
+env/
+venv/
+ENV/
+*.log
+logs/
+tmp/
+.DS_Store
