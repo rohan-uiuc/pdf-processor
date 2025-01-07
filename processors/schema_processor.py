@@ -43,9 +43,9 @@ class SchemaProcessor:
                 )
 
             # Analyze document content to determine schema
-            chunks = metadata.get("chunks", [])
+            chunks = metadata.get("elements", [])
             chunk_texts = [
-                chunk["content"] for chunk in chunks if chunk["type"] != "Title"
+                chunk["text"] for chunk in chunks if chunk["type"] != "Title"
             ]
             sample_content = "\n\n".join(
                 chunk_texts[:3]
@@ -66,6 +66,8 @@ class SchemaProcessor:
 
             Return as a DocumentSchemaDefinition with appropriate field definitions.
             """
+
+            logger.info(f"Schema definition prompt: {prompt}")
 
             result = await self.schema_extractor.ainvoke(
                 {

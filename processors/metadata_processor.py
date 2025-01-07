@@ -48,8 +48,9 @@ class MetadataProcessor:
 
             for i in range(0, len(chunks), batch_size):
                 batch = chunks[i : i + batch_size]
+
                 chunk_texts = [
-                    f"[Chunk {chunk.get('chunk_number', i)}]\n{chunk['content']}"
+                    f"[Chunk {chunk.get('element_id', i)}]\n{chunk['text']}"
                     for chunk in batch
                 ]
 
@@ -78,6 +79,8 @@ class MetadataProcessor:
                         "existing": {"document_id": doc_id},
                     }
                 )
+
+                logger.info(f"Metadata extraction result: {result}")
 
                 if result and result.get("responses"):
                     metadata_extraction = result["responses"][0]

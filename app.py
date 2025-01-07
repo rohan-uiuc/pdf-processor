@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from unstructured.staging.base import elements_from_base64_gzipped_json
+from sqlalchemy.orm.attributes import flag_modified
+
 
 # Load environment variables
 load_dotenv()
@@ -45,6 +47,7 @@ def save_files(files) -> List[str]:
     file_paths = []
     upload_dir = Path("uploaded_files")
     upload_dir.mkdir(exist_ok=True)
+    print("Upload dir:", upload_dir)
     
     try:
         for file in files:
@@ -84,7 +87,7 @@ def save_files(files) -> List[str]:
                 except Exception as e:
                     logger.error(f"Error processing file {getattr(file, 'name', 'unknown')}: {str(e)}")
                     continue
-        
+        print("File paths:", file_paths)
         return file_paths
         
     except Exception as e:
@@ -425,13 +428,16 @@ async def extract_schema() -> tuple[str, list]:
         for doc in docs:
             try:
                 metadata = doc.processing_artifacts
-                
+
                 # Define schema using trustcall
                 schema = await state.schema_processor.define_schema(metadata)
+                logger.info(f"EXTRACTED SCHEMA: {schema}")
                 
                 # Update document with schema
                 metadata['schema'] = schema
+                
                 doc.processing_artifacts = metadata
+                flag_modified(doc, "processing_artifacts")  # Mark the field as modified
                 doc.db_save_status = 'processing'
                 session.commit()
                 
@@ -488,8 +494,9 @@ async def extract_metadata() -> tuple[str, list]:
                 
                 # Extract metadata using trustcall
                 extracted_metadata = await state.metadata_processor.extract_metadata(
-                    doc.id, schema, metadata.get('chunks', [])
+                    doc.id, schema, metadata.get('elements', [])
                 )
+                logger.info(f"EXTRACTED METADATA: {extracted_metadata}")
                 
                 # Update document with extracted metadata
                 metadata['extracted_metadata'] = extracted_metadata

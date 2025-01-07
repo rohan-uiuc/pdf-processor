@@ -25,18 +25,18 @@ services:
       - uploaded_files:/code/uploaded_files
       - extracted_images:/code/extracted_images
     user: "1000:1000"
-    networks:
-      - supabase_network
+    # networks:
+    #   - supabase_network
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-networks:
-  supabase_network:
-    external: true
-    name: supabase_default
+# networks:
+#   supabase_network:
+#     external: true
+#     name: supabase_default
 
 volumes:
   cache_data:

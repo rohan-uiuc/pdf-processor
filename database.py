@@ -100,7 +100,7 @@ def init_db(db_path=None, force_recreate=False, max_retries=5, retry_delay=2):
     if db_path is None:
         # Default to local Supabase PostgreSQL connection
         db_path = os.getenv('DATABASE_URL', 
-                           'postgresql://postgres:postgres@db.supabase_network_ai-ta-backend:5432/postgres')
+                           'postgresql://postgres:postgres@supabase_default:5432/postgres')
     
     logger.info(f"Initializing database at {db_path}")
     
