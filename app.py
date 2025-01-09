@@ -429,10 +429,13 @@ async def extract_schema() -> tuple[str, list]:
         
         for doc in docs:
             try:
+                # fetch related chunks here
+                chunks = session.query(Chunk).filter(Chunk.document_id == doc.id).all()
+
                 metadata = doc.processing_artifacts
 
                 # Define schema using trustcall
-                schema = await state.schema_processor.define_schema(metadata)
+                schema = await state.schema_processor.define_schema(chunks)
                 logger.info(f"EXTRACTED SCHEMA: {schema}")
                 
                 # Update document with schema
@@ -504,7 +507,7 @@ async def extract_metadata() -> tuple[str, list]:
                 
                 # Update document with extracted metadata
 
-                metadata['extracted_metadata'] = extracted_metadata.metadata_list
+                metadata['extracted_metadata'] = extracted_metadata[0].metadata_list
                 doc.processing_artifacts = metadata
                 flag_modified(doc, "processing_artifacts")  # Mark the field as modified
                 doc.db_save_status = 'completed'
