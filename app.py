@@ -16,6 +16,8 @@ from sqlalchemy.orm import sessionmaker
 from unstructured.staging.base import elements_from_base64_gzipped_json
 from sqlalchemy.orm.attributes import flag_modified
 
+from processors.metadata_processor import DocumentMetadataExtraction
+
 
 # Load environment variables
 load_dotenv()
@@ -491,16 +493,20 @@ async def extract_metadata() -> tuple[str, list]:
                 
                 if not schema:
                     continue
+
+                logger.info(f"Extracting metadata for document: {doc.id} and {doc.readable_filename}")
                 
                 # Extract metadata using trustcall
-                extracted_metadata = await state.metadata_processor.extract_metadata(
+                extracted_metadata: DocumentMetadataExtraction = await state.metadata_processor.extract_metadata(
                     doc.id, schema, metadata.get('elements', [])
                 )
                 logger.info(f"EXTRACTED METADATA: {extracted_metadata}")
                 
                 # Update document with extracted metadata
-                metadata['extracted_metadata'] = extracted_metadata
+
+                metadata['extracted_metadata'] = extracted_metadata[0].metadata_list
                 doc.processing_artifacts = metadata
+                flag_modified(doc, "processing_artifacts")  # Mark the field as modified
                 doc.db_save_status = 'completed'
                 session.commit()
                 

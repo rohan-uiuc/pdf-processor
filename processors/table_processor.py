@@ -125,7 +125,7 @@ class TableProcessor:
             with open(image_path, "rb") as image_file:
                 image_data = base64.b64encode(image_file.read()).decode()
 
-                prompt = """Analyze this table image and its HTML representation to extract structured data.
+                prompt = """Analyze this table image and extract structured data.
                 The goal is to create a precise JSON representation of the table data.
                 
                 Guidelines:
@@ -145,7 +145,8 @@ class TableProcessor:
                     content=[
                         {
                             "type": "text",
-                            "text": f"{prompt}\n\nHTML Representation:\n{table_html}"
+                            #"text": f"{prompt}\n\nHTML Representation:\n{table_html}"
+                            "text": f"{prompt}\n\n"
                         },
                         {
                             "type": "image_url",

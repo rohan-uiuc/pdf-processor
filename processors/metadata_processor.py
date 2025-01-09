@@ -14,17 +14,20 @@ class MetadataValue(BaseModel):
     value: Any
     confidence_score: int
     source_chunk_id: Optional[int] = None
-    extraction_method: str = "gpt-4"
+    extraction_method: str = "gpt-4o"
+
+class MetadataList(BaseModel):
+    metadata_values: List[MetadataValue]
 
 class DocumentMetadataExtraction(BaseModel):
     document_id: int
-    metadata_values: List[MetadataValue]
+    metadata_list: MetadataList
 
 class MetadataProcessor:
     def __init__(self, engine=None):
         self.logger = logger
         self.engine = engine
-        self.client = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4")
+        self.client = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
 
     async def extract_metadata(
         self, doc_id: int, schema: Dict[str, Any], chunks: List[Dict[str, Any]]
@@ -37,16 +40,20 @@ class MetadataProcessor:
 
                 self.metadata_extractor = create_extractor(
                     self.client,
-                    tools=[DocumentMetadataExtraction],
-                    tool_choice="DocumentMetadataExtraction",
+                    tools=[MetadataList],
+                    tool_choice="MetadataList",
                     enable_inserts=True,
                 )
 
             # Process chunks in batches to extract metadata
             batch_size = 5
             all_metadata = []
+            metadata_list_obj = MetadataList(metadata_values=[])
+            doc_object = DocumentMetadataExtraction(document_id=doc_id, metadata_list=metadata_list_obj)
+            logger.info(f"Extracting metadata for document {doc_object}\n")
 
             for i in range(0, len(chunks), batch_size):
+                logger.info(f"DOCUMENT:  {doc_object}\n\n")
                 batch = chunks[i : i + batch_size]
 
                 chunk_texts = [
@@ -76,17 +83,21 @@ class MetadataProcessor:
                             },
                             {"role": "user", "content": prompt},
                         ],
-                        "existing": {"document_id": doc_id},
+                        "existing": {"MetadataList": metadata_list_obj},
                     }
                 )
 
                 logger.info(f"Metadata extraction result: {result}")
 
                 if result and result.get("responses"):
-                    metadata_extraction = result["responses"][0]
-                    all_metadata.extend(metadata_extraction.metadata_values)
+                    #metadata_extraction = result["responses"][0]
+                    #all_metadata.extend(metadata_extraction.metadata_values)
+                    metadata_list_obj = MetadataList(**result["responses"][0].model_dump())
 
-            return [m.model_dump() for m in all_metadata]
+            doc_object.metadata_list = metadata_list_obj
+            logger.info(f"FINAL Extracted metadata: {doc_object}")
+
+            return [doc_object.model_dump()]
 
         except Exception as e:
             self.logger.error(f"Error extracting metadata: {str(e)}")

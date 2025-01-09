@@ -26,7 +26,7 @@ class SchemaProcessor:
     def __init__(self, engine=None):
         self.logger = logger
         self.engine = engine
-        self.client = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4")
+        self.client = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
 
     async def define_schema(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Define document schema using trustcall."""
@@ -51,19 +51,29 @@ class SchemaProcessor:
                 chunk_texts[:3]
             )  # Use first 3 chunks as sample
 
-            prompt = f"""Based on the following document content, define a schema for extracting metadata.
-            The schema should capture key information that would be relevant for a course document.
+            prompt = f"""You are an expert in tractor specifications and documentation. Your task is to analyze high quality documents from tractor manuals and brochures to create a comprehensive schema for tractor metadata.
+            Examine the provided text carefully and identify ALL possible metadata fields relevant to tractors, their components, their configurations, performance metrics, compliance information, and more. Your schema should include, but is not limited to, the following categories:
 
-            Sample content:
-            {sample_content}
+            1. Basic Information (e.g., Make, Model, Series)
+            2. Technical Specifications (e.g., Engine, Transmission, Hydraulics)
+            3. Dimensions and Capacities
+            4. Optional Features and Configurations
+            5. Performance Metrics
+            6. Compliance and Certifications
+            7. Components and Configurations
+            8. Additional Fields
 
-            Define a schema that includes fields for course-related information like:
-            - Course name, code, department
-            - Instructor information
-            - Course schedule, prerequisites
-            - Learning objectives
-            - And any other relevant fields based on the content
+            For each identified field, provide:
+            1. A clear, descriptive field name
+            2. A concise description of what the field represents
+            3. The expected data type (e.g., string, integer, list, nested object, all pydantic types)
 
+            Your output should be an object containing JSON array of objects, each representing a field in the schema with name, description and type.
+
+            Be thorough and creative in identifying relevant fields. Consider all aspects of tractor specifications and features that might be important for users of this schema.
+            Everything that needs to be added/removed/changed is inside the field 'document_metadata_schema'.
+            Do not try to use 'instance' field for jsonpatch as it is an internal field used to track instances of the schema. The main schema is stored in the 'document_metadata_schema' field.
+            Analyze the following text and create a comprehensive schema.
             Return as a DocumentSchemaDefinition with appropriate field definitions.
             """
 
