@@ -3,8 +3,8 @@ from typing import List, Dict, Any, Optional, Union
 import logging
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.pydantic_v1 import BaseModel, Field
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
 from database import Chunk, Document
 import os
 from datetime import datetime, timezone
