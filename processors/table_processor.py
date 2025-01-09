@@ -1,23 +1,112 @@
 import base64
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import logging
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.pydantic_v1 import BaseModel, Field
 from sqlalchemy.orm import Session
 from database import Chunk, Document
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from utils.logging_config import setup_detailed_logging
 
 logger = setup_detailed_logging()
 
+class MergedCell(BaseModel):
+    start_row: int = Field(description="Starting row index (0-based)")
+    end_row: int = Field(description="Ending row index (0-based)")
+    start_col: int = Field(description="Starting column index (0-based)")
+    end_col: int = Field(description="Ending column index (0-based)")
+    value: str = Field(description="Content of the merged cell")
+
+class TableStructure(BaseModel):
+    merged_cells: List[MergedCell] = Field(description="List of merged cells in the table")
+    header_rows: int = Field(description="Number of header rows in the table")
+    header_hierarchy: Dict[str, List[str]] = Field(description="Hierarchical structure of headers if present")
+    total_rows: int = Field(description="Total number of rows including headers")
+    total_cols: int = Field(description="Total number of columns")
+    column_spans: List[Dict[str, Any]] = Field(description="Column span information")
+    row_spans: List[Dict[str, Any]] = Field(description="Row span information")
+
+class TableData(BaseModel):
+    headers: List[Union[str, List[str]]] = Field(description="Array of column headers, can be nested for multi-level headers")
+    rows: List[Dict[str, Any]] = Field(description="Array of row objects with column values")
+    structure: TableStructure = Field(description="Detailed table structure information")
+    raw_data: List[List[Any]] = Field(description="Raw table data as a 2D array, preserving exact cell positions")
+
 class TableProcessor:
     def __init__(self, engine=None):
-        
         self.logger = logger
         self.engine = engine
         self.client = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
+
+    async def process_table_with_vision(self, image_path: str, table_html: str) -> Optional[Dict]:
+        """Process table using image with GPT-4V."""
+        try:
+            with open(image_path, "rb") as image_file:
+                image_data = base64.b64encode(image_file.read()).decode()
+
+                prompt = """
+                You are an expert at analyzing tables and extracting structured data.
+                You must return a valid JSON object that captures ALL structural details. Follow these instructions religiously!
+Instructions:
+1. Headers (including multi-level headers):
+   - Preserve hierarchy of headers
+   - Handle merged header cells
+   - Maintain parent-child relationships
+
+2. Rows and Cells:
+   - Capture merged cells across rows/columns
+   - Preserve empty cells
+   - Maintain exact positioning
+   - Keep original formatting/values
+
+3. Table Structure:
+   - Track all merged cells with their spans
+   - Record header hierarchy
+   - Document row/column spans
+   - Preserve table dimensions
+
+Process the table systematically:
+1. First analyze the overall structure
+2. Identify all merged cells and spans
+3. Map the header hierarchy
+4. Extract row data with proper column alignment
+5. Create the raw data array maintaining positions
+6. Validate all relationships are preserved"""
+
+                # Create a structured model-backed chat model
+                structured_llm = self.client.with_structured_output(TableData)
+                system_message = SystemMessage(content=prompt)
+
+                user_message = HumanMessage(
+                    content=[
+                        {
+                            "type": "text",
+                            "text": "Analyze this table image and extract structured data with precise attention to complex table structures."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_data}"
+                            }
+                        }
+                    ]
+                )
+
+                self.logger.info(f"Processing table with image {image_path}")
+                try:
+                    # Get structured output directly
+                    result = await structured_llm.ainvoke([system_message, user_message])
+                    return result.model_dump()
+                except Exception as e:
+                    self.logger.error(f"Error getting structured output: {str(e)}")
+                    return None
+
+        except Exception as e:
+            self.logger.error(f"Error processing table with vision for {image_path}: {str(e)}")
+            return None
 
     async def process_tables(self) -> List[Dict[str, Any]]:
         """Process tables from database chunks and update with structured data."""
@@ -63,19 +152,18 @@ class TableProcessor:
                                     self.logger.warning(f"Image path {image_path} not found for chunk {chunk.id}")
                                     continue
 
-                                if chunk.table_html:
-                                    structured_data = await self.process_table_with_vision(
-                                        image_path,
-                                        chunk.table_html
-                                    )
+                                structured_data = await self.process_table_with_vision(
+                                    image_path,
+                                    ""  # Removed table_html parameter
+                                )
 
-                                    if structured_data:
-                                        chunk_results.append(structured_data)
+                                if structured_data:
+                                    chunk_results.append(structured_data)
 
                             if chunk_results:
                                 # Store all results in the chunk's table_data
                                 chunk.table_data = {
-                                    'processed_at': datetime.utcnow().isoformat(),
+                                    'processed_at': datetime.now(timezone.utc).isoformat(),
                                     'results': chunk_results
                                 }
                                 session.commit()
@@ -118,56 +206,3 @@ class TableProcessor:
             raise
         finally:
             session.close()
-
-    async def process_table_with_vision(self, image_path: str, table_html: str) -> Optional[Dict]:
-        """Process table using both image and HTML with GPT-4V."""
-        try:
-            with open(image_path, "rb") as image_file:
-                image_data = base64.b64encode(image_file.read()).decode()
-
-                prompt = """Analyze this table image and extract structured data.
-                The goal is to create a precise JSON representation of the table data.
-                
-                Guidelines:
-                1. Preserve the exact column headers and row structure
-                2. Maintain any merged cells or special formatting
-                3. Ensure all text values match exactly what appears in the table
-                4. Include any relevant metadata about the table structure
-                
-                Return the data as a JSON object with:
-                - headers: array of column headers
-                - rows: array of row objects with column values
-                - metadata: any additional table structure information
-                
-                The HTML representation is provided for additional context."""
-
-                message = HumanMessage(
-                    content=[
-                        {
-                            "type": "text",
-                            #"text": f"{prompt}\n\nHTML Representation:\n{table_html}"
-                            "text": f"{prompt}\n\n"
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_data}"
-                            }
-                        }
-                    ]
-                )
-
-                self.logger.info(f"Processing table with image {image_path}")
-                response = await self.client.ainvoke([message])
-
-                if not response or not response.content:
-                    self.logger.warning(f"No response content for table {image_path}")
-                    return None
-
-                # Parse the response into structured data
-                # The response should be a JSON string that we can directly store
-                return response.content
-
-        except Exception as e:
-            self.logger.error(f"Error processing table with vision for {image_path}: {str(e)}")
-            return None
