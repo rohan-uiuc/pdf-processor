@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from database import Chunk, Document
 import os
 from datetime import datetime, timezone
+from trustcall import create_extractor
 
 from utils.logging_config import setup_detailed_logging
 
@@ -21,25 +22,38 @@ class MergedCell(BaseModel):
     value: str = Field(description="Content of the merged cell")
 
 class TableStructure(BaseModel):
-    merged_cells: List[MergedCell] = Field(description="List of merged cells in the table")
-    header_rows: int = Field(description="Number of header rows in the table")
-    header_hierarchy: Dict[str, List[str]] = Field(description="Hierarchical structure of headers if present")
+    merged_cells: List[MergedCell] = Field(default_factory=list, description="List of merged cells in the table")
+    header_rows: int = Field(default=1, description="Number of header rows in the table")
+    header_hierarchy: Dict[str, List[str]] = Field(default_factory=dict, description="Hierarchical structure of headers if present")
     total_rows: int = Field(description="Total number of rows including headers")
     total_cols: int = Field(description="Total number of columns")
-    column_spans: List[Dict[str, Any]] = Field(description="Column span information")
-    row_spans: List[Dict[str, Any]] = Field(description="Row span information")
+    column_spans: List[Dict[str, Any]] = Field(default_factory=list, description="Column span information")
+    row_spans: List[Dict[str, Any]] = Field(default_factory=list, description="Row span information")
 
 class TableData(BaseModel):
     headers: List[Union[str, List[str]]] = Field(description="Array of column headers, can be nested for multi-level headers")
-    rows: List[Dict[str, Any]] = Field(description="Array of row objects with column values")
+    rows: List[Dict[str, Any]] = Field(default_factory=list, description="Array of row objects with column values")
     structure: TableStructure = Field(description="Detailed table structure information")
     raw_data: List[List[Any]] = Field(description="Raw table data as a 2D array, preserving exact cell positions")
+
+    class Config:
+        extra = "allow"  # Allow extra fields in the response
 
 class TableProcessor:
     def __init__(self, engine=None):
         self.logger = logger
         self.engine = engine
-        self.client = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
+        self.client = ChatOpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"), 
+            model="gpt-4o",
+            temperature=0
+        )
+        # Initialize Trustcall extractor with our TableData schema
+        self.extractor = create_extractor(
+            self.client,
+            tools=[TableData],
+            tool_choice="TableData"
+        )
 
     async def process_table_with_vision(self, image_path: str, table_html: str) -> Optional[Dict]:
         """Process table using image with GPT-4V."""
@@ -49,59 +63,137 @@ class TableProcessor:
 
                 prompt = """
                 You are an expert at analyzing tables and extracting structured data.
-                You must return a valid JSON object that captures ALL structural details. Follow these instructions religiously!
+                Extract ALL structural details from the table image, including headers, rows, merged cells, and hierarchies.
+
 Instructions:
 1. Headers (including multi-level headers):
-   - Preserve hierarchy of headers
-   - Handle merged header cells
-   - Maintain parent-child relationships
+   - Extract all column headers
+   - If headers are nested, represent them as arrays
+   - Keep header text exactly as shown
+   - Identify merged header cells and their spans
 
 2. Rows and Cells:
-   - Capture merged cells across rows/columns
-   - Preserve empty cells
-   - Maintain exact positioning
-   - Keep original formatting/values
+   - Extract each row as a dictionary with column headers as keys
+   - Use exact header text as keys
+   - Keep all cell values in their original format
+   - Include empty cells as empty strings
+   - Track merged cells across rows and columns
 
 3. Table Structure:
-   - Track all merged cells with their spans
-   - Record header hierarchy
-   - Document row/column spans
-   - Preserve table dimensions
+   - Count total rows and columns
+   - Note any merged cells with their exact positions and content
+   - Record header structure and hierarchy
+   - Track all cell spans and merges
 
-Process the table systematically:
-1. First analyze the overall structure
-2. Identify all merged cells and spans
-3. Map the header hierarchy
-4. Extract row data with proper column alignment
-5. Create the raw data array maintaining positions
-6. Validate all relationships are preserved"""
+4. Raw Data:
+   - Create a 2D array representing the table exactly as shown
+   - Preserve all empty cells
+   - Keep original text formatting
+   - Maintain merged cell positions
 
-                # Create a structured model-backed chat model
-                structured_llm = self.client.with_structured_output(TableData)
-                system_message = SystemMessage(content=prompt)
+Example structure for a complex table:
+{
+    "headers": [
+        ["Category", "Specifications", "Specifications", "Specifications"],
+        ["", "Model A", "Model B", "Model C"]
+    ],
+    "rows": [
+        {
+            "Category": "Engine",
+            "Model A": "2.0L",
+            "Model B": "2.5L",
+            "Model C": "3.0L"
+        },
+        {
+            "Category": "Performance",
+            "Model A": "200hp",
+            "Model B": "250hp",
+            "Model C": "300hp"
+        }
+    ],
+    "structure": {
+        "total_rows": 4,
+        "total_cols": 4,
+        "header_rows": 2,
+        "merged_cells": [
+            {
+                "start_row": 0,
+                "end_row": 0,
+                "start_col": 1,
+                "end_col": 3,
+                "value": "Specifications"
+            },
+            {
+                "start_row": 2,
+                "end_row": 3,
+                "start_col": 0,
+                "end_col": 0,
+                "value": "Performance Data"
+            }
+        ],
+        "header_hierarchy": {
+            "Specifications": ["Model A", "Model B", "Model C"]
+        },
+        "column_spans": [
+            {"row": 0, "col_start": 1, "col_end": 3, "value": "Specifications"}
+        ],
+        "row_spans": [
+            {"col": 0, "row_start": 2, "row_end": 3, "value": "Performance Data"}
+        ]
+    },
+    "raw_data": [
+        ["Category", "Specifications", "Specifications", "Specifications"],
+        ["", "Model A", "Model B", "Model C"],
+        ["Performance Data", "200hp", "250hp", "300hp"],
+        ["", "Fast", "Faster", "Fastest"]
+    ]
+}
 
-                user_message = HumanMessage(
-                    content=[
+Important:
+- Capture ALL merged cells with their exact positions and content
+- Track both horizontal (column) and vertical (row) spans
+- Preserve the hierarchy of headers
+- Keep all text exactly as shown in the table
+- Include empty cells in both rows and raw_data
+- Record the total number of header rows accurately"""
+
+                # Create the message with image
+                message = {
+                    "messages": [
                         {
-                            "type": "text",
-                            "text": "Analyze this table image and extract structured data with precise attention to complex table structures."
+                            "role": "system",
+                            "content": prompt
                         },
                         {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_data}"
-                            }
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "Extract the table data from this image, preserving all structural information and exact text values."
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{image_data}"
+                                    }
+                                }
+                            ]
                         }
                     ]
-                )
+                }
 
                 self.logger.info(f"Processing table with image {image_path}")
                 try:
-                    # Get structured output directly
-                    result = await structured_llm.ainvoke([system_message, user_message])
-                    return result.model_dump()
+                    # Use Trustcall to extract table data
+                    result = await self.extractor.ainvoke(message)
+                    
+                    # Get the first response and convert to dict
+                    if result and "responses" in result and len(result["responses"]) > 0:
+                        return result["responses"][0].model_dump(exclude_none=True)
+                    return None
+
                 except Exception as e:
-                    self.logger.error(f"Error getting structured output: {str(e)}")
+                    self.logger.error(f"Error extracting table data: {str(e)}")
                     return None
 
         except Exception as e:
