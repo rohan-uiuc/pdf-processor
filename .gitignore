@@ -1,3 +1,5 @@
 .env
 __pycache__/
 *.pyc 
+nltk_data/*
+extracted_images/*
