@@ -504,7 +504,7 @@ async def extract_metadata() -> tuple[str, list]:
                 
                 # Update document with extracted metadata
 
-                metadata['extracted_metadata'] = extracted_metadata[0].metadata_list
+                metadata['extracted_metadata'] = extracted_metadata.metadata_list
                 doc.processing_artifacts = metadata
                 flag_modified(doc, "processing_artifacts")  # Mark the field as modified
                 doc.db_save_status = 'completed'
@@ -512,6 +512,7 @@ async def extract_metadata() -> tuple[str, list]:
                 
                 output += f"File: {doc.readable_filename}\n"
                 output += f"Metadata extracted successfully\n"
+                output += f"Metadata: {metadata['extracted_metadata']}\n"
                 output += "-" * 50 + "\n"
                 
             except Exception as e:

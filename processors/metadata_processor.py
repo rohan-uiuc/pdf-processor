@@ -31,7 +31,7 @@ class MetadataProcessor:
 
     async def extract_metadata(
         self, doc_id: int, schema: Dict[str, Any], chunks: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    ) -> List[DocumentMetadataExtraction]:
         """Extract metadata from chunks using trustcall based on schema."""
         try:
             # Create metadata extractor if not exists
