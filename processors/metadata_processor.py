@@ -50,10 +50,10 @@ class MetadataProcessor:
             all_metadata = []
             metadata_list_obj = MetadataList(metadata_values=[])
             doc_object = DocumentMetadataExtraction(document_id=doc_id, metadata_list=metadata_list_obj)
-            logger.info(f"Extracting metadata for document {doc_object}\n")
+            logger.info(f"Extracting metadata for document object: {doc_object}\n")
 
             for i in range(0, len(chunks), batch_size):
-                logger.info(f"DOCUMENT:  {doc_object}\n\n")
+                logger.info(f"Metadata list object:  {metadata_list_obj}\n\n")
                 batch = chunks[i : i + batch_size]
 
                 chunk_texts = [
@@ -97,7 +97,7 @@ class MetadataProcessor:
             doc_object.metadata_list = metadata_list_obj
             logger.info(f"FINAL Extracted metadata: {doc_object}")
 
-            return [doc_object.model_dump()]
+            return [doc_object]
 
         except Exception as e:
             self.logger.error(f"Error extracting metadata: {str(e)}")
