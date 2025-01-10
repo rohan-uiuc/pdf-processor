@@ -1,3 +1,4 @@
+import json
 from typing import Dict, Any
 import logging
 import os
@@ -87,7 +88,7 @@ class SchemaProcessor:
             # Process tables individually and content in batches
             chunk_batches = (
                 # Process each table chunk individually
-                [[chunk.table_data] for chunk in table_chunks] +
+                [[json.dumps(chunk.table_data) if chunk.table_data else ""] for chunk in table_chunks] +
                 # Process content chunks in batches
                 [content_texts[i:i + batch_size] for i in range(0, len(content_texts), batch_size)]
             )
