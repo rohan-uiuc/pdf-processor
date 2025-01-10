@@ -97,7 +97,7 @@ class MetadataProcessor:
             doc_object.metadata_list = metadata_list_obj
             logger.info(f"FINAL Extracted metadata: {doc_object}")
 
-            return [doc_object]
+            return [doc_object.model_dump()]
 
         except Exception as e:
             self.logger.error(f"Error extracting metadata: {str(e)}")
