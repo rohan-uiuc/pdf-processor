@@ -55,7 +55,7 @@ class TableProcessor:
             tool_choice="TableData"
         )
 
-    async def process_table_with_vision(self, image_path: str) -> Optional[TableData]:
+    async def process_table_with_vision(self, image_path: str) -> Optional[Dict]:
         """Process table using image with GPT-4V."""
         try:
             with open(image_path, "rb") as image_file:
@@ -189,7 +189,7 @@ Important:
                     
                     # Get the first response and convert to dict
                     if result and "responses" in result and len(result["responses"]) > 0:
-                        return TableData(**result["responses"][0].model_dump(exclude_none=True))
+                        return TableData(**result["responses"][0].model_dump(exclude_none=True)).model_dump()
                     return None
 
                 except Exception as e:
@@ -246,7 +246,7 @@ Important:
 
                                 structured_data = await self.process_table_with_vision(
                                     image_path
-                                ).model_dump()
+                                )
 
                                 if structured_data:
                                     chunk_results.append(structured_data)
