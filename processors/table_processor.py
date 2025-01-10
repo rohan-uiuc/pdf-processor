@@ -14,30 +14,53 @@ from utils.logging_config import setup_detailed_logging
 
 logger = setup_detailed_logging()
 
-class MergedCell(BaseModel):
-    start_row: int = Field(description="Starting row index (0-based)")
-    end_row: int = Field(description="Ending row index (0-based)")
-    start_col: int = Field(description="Starting column index (0-based)")
-    end_col: int = Field(description="Ending column index (0-based)")
-    value: str = Field(description="Content of the merged cell")
+# class MergedCell(BaseModel):
+#     start_row: int = Field(description="Starting row index (0-based)")
+#     end_row: int = Field(description="Ending row index (0-based)")
+#     start_col: int = Field(description="Starting column index (0-based)")
+#     end_col: int = Field(description="Ending column index (0-based)")
+#     value: str = Field(description="Content of the merged cell")
 
-class TableStructure(BaseModel):
-    merged_cells: List[MergedCell] = Field(default_factory=list, description="List of merged cells in the table")
-    header_rows: int = Field(default=1, description="Number of header rows in the table")
-    header_hierarchy: Dict[str, List[str]] = Field(default_factory=dict, description="Hierarchical structure of headers if present")
-    total_rows: int = Field(description="Total number of rows including headers")
-    total_cols: int = Field(description="Total number of columns")
-    column_spans: List[Dict[str, Any]] = Field(default_factory=list, description="Column span information")
-    row_spans: List[Dict[str, Any]] = Field(default_factory=list, description="Row span information")
+# class TableStructure(BaseModel):
+#     merged_cells: List[MergedCell] = Field(default_factory=list, description="List of merged cells in the table")
+#     header_rows: int = Field(default=1, description="Number of header rows in the table")
+#     header_hierarchy: Dict[str, List[str]] = Field(default_factory=dict, description="Hierarchical structure of headers if present")
+#     total_rows: int = Field(description="Total number of rows including headers")
+#     total_cols: int = Field(description="Total number of columns")
+#     column_spans: List[Dict[str, Any]] = Field(default_factory=list, description="Column span information")
+#     row_spans: List[Dict[str, Any]] = Field(default_factory=list, description="Row span information")
 
-class TableData(BaseModel):
-    headers: List[Union[str, List[str]]] = Field(description="Array of column headers, can be nested for multi-level headers")
-    rows: List[Dict[str, Any]] = Field(default_factory=list, description="Array of row objects with column values")
-    structure: TableStructure = Field(description="Detailed table structure information")
-    raw_data: List[List[Any]] = Field(description="Raw table data as a 2D array, preserving exact cell positions")
+# class TableData(BaseModel):
+#     headers: List[Union[str, List[str]]] = Field(description="Array of column headers, should be nested for multi-level headers")
+#     rows: List[Dict[str, Any]] = Field(default_factory=list, description="Array of row objects with column values")
+#     structure: TableStructure = Field(description="Detailed table structure information")
+#     raw_data: List[List[Any]] = Field(description="Raw table data as a 2D array, preserving exact cell positions")
 
-    class Config:
-        extra = "allow"  # Allow extra fields in the response
+#     class Config:
+#         extra = "allow"  # Allow extra fields in the response
+
+class TableCell(BaseModel):
+    value: str = Field(description="Cell content")
+    row_index: int = Field(description="0-based row index")
+    col_index: int = Field(description="0-based column index")
+    is_header: bool = Field(description="Whether this cell is a header")
+    is_merged: bool = Field(description="Whether this cell is part of a merged group")
+    parent_section: Optional[str] = Field(description="Parent section/category this cell belongs to")
+    data_type: str = Field(description="Type of data in cell (text, number, etc.)")
+    
+class TableSection(BaseModel):
+    name: str = Field(description="Section name (e.g., 'POWER', 'TRANSMISSION')")
+    start_row: int = Field(description="Starting row of section")
+    end_row: int = Field(description="Ending row of section")
+    properties: List[str] = Field(description="List of property names in this section")
+    
+class EnhancedTableStructure(BaseModel):
+    sections: List[TableSection] = Field(description="Table sections/categories")
+    cell_matrix: List[List[TableCell]] = Field(description="2D matrix of all cells")
+    primary_headers: List[str] = Field(description="Top-level headers")
+    sub_headers: Dict[str, List[str]] = Field(description="Nested header relationships")
+    section_relationships: Dict[str, List[str]] = Field(description="How sections relate to headers")
+    data_hierarchy: Dict[str, Any] = Field(description="Tree structure of data relationships")
 
 class TableProcessor:
     def __init__(self, engine=None):
@@ -51,8 +74,8 @@ class TableProcessor:
         # Initialize Trustcall extractor with our TableData schema
         self.extractor = create_extractor(
             self.client,
-            tools=[TableData],
-            tool_choice="TableData"
+            tools=[EnhancedTableStructure],
+            tool_choice="EnhancedTableStructure"
         )
 
     async def process_table_with_vision(self, image_path: str) -> Optional[Dict]:
@@ -63,90 +86,53 @@ class TableProcessor:
 
                 prompt = """
                 You are an expert at analyzing tables and extracting structured data.
-                Extract ALL structural details from the table image, including headers, rows, merged cells, and hierarchies.
-
+                Extract ALL structural details from the table image, including headers, rows, merged cells, and hierarchies sequentially.
+                You must return a valid JSON object that captures ALL structural details. Follow these instructions religiously!
+                Make sure to capture all cells, rows, columns, headers, merged cells, and hierarchies, and relationships between them, DO NOT skip any.
 Instructions:
-1. Headers (including multi-level headers):
-   - Extract all column headers
-   - If headers are nested, represent them as arrays
-   - Keep header text exactly as shown
-   - Identify merged header cells and their spans
+1. SECTION IDENTIFICATION
+- First identify distinct table sections (groups of related rows)
+- Note where each section starts and ends
+- Identify the hierarchy of sections
 
-2. Rows and Cells:
-   - Extract each row as a dictionary with column headers as keys
-   - Use exact header text as keys
-   - Keep all cell values in their original format
-   - Include empty cells as empty strings
-   - Track merged cells across rows and columns
+2. HEADER ANALYSIS
+- Identify all column headers at each level
+- Map relationships between header levels
+- Note which headers apply to which sections
 
-3. Table Structure:
-   - Count total rows and columns
-   - Note any merged cells with their exact positions and content
-   - Record header structure and hierarchy
-   - Track all cell spans and merges
+3. MERGED CELL PROCESSING
+- Identify all merged cells (both horizontal and vertical)
+- Determine if merged cells are headers or data
+- Map merged cells to their respective sections
+- Repeat the values for individual cells that are part of a merged group such that all the values mapping to a particular row and column are accurately captured.
 
-4. Raw Data:
-   - Create a 2D array representing the table exactly as shown
-   - Preserve all empty cells
-   - Keep original text formatting
-   - Maintain merged cell positions
+4. DATA STRUCTURE MAPPING
+- Create a cell matrix preserving all relationships
+- Map each cell to its correct headers and section
+- Preserve the parent-child relationships
 
-Example structure for a complex table:
+5. SEMANTIC GROUPING
+- Group related data fields
+- Identify dependent fields
+- Map field relationships within sections
+
+For each cell, provide:
 {
-    "headers": [
-        ["Category", "Specifications", "Specifications", "Specifications"],
-        ["", "Model A", "Model B", "Model C"]
-    ],
-    "rows": [
-        {
-            "Category": "Engine",
-            "Model A": "2.0L",
-            "Model B": "2.5L",
-            "Model C": "3.0L"
-        },
-        {
-            "Category": "Performance",
-            "Model A": "200hp",
-            "Model B": "250hp",
-            "Model C": "300hp"
-        }
-    ],
-    "structure": {
-        "total_rows": 4,
-        "total_cols": 4,
-        "header_rows": 2,
-        "merged_cells": [
-            {
-                "start_row": 0,
-                "end_row": 0,
-                "start_col": 1,
-                "end_col": 3,
-                "value": "Specifications"
-            },
-            {
-                "start_row": 2,
-                "end_row": 3,
-                "start_col": 0,
-                "end_col": 0,
-                "value": "Performance Data"
-            }
-        ],
-        "header_hierarchy": {
-            "Specifications": ["Model A", "Model B", "Model C"]
-        },
-        "column_spans": [
-            {"row": 0, "col_start": 1, "col_end": 3, "value": "Specifications"}
-        ],
-        "row_spans": [
-            {"col": 0, "row_start": 2, "row_end": 3, "value": "Performance Data"}
-        ]
-    },
-    "raw_data": [
-        ["Category", "Specifications", "Specifications", "Specifications"],
-        ["", "Model A", "Model B", "Model C"],
-        ["Performance Data", "200hp", "250hp", "300hp"],
-        ["", "Fast", "Faster", "Fastest"]
-    ]
+    "value": "actual content",
+    "row_index": 0,
+    "col_index": 0,
+    "is_header": false,
+    "is_merged": false,
+    "parent_section": "section name",
+    "data_type": "text/number/etc"
+}
+
+For each section, provide:
+{
+    "name": "section name",
+    "start_row": 0,
+    "end_row": 5,
+    "properties": ["prop1", "prop2"]
 }
 
 Important:
@@ -154,8 +140,26 @@ Important:
 - Track both horizontal (column) and vertical (row) spans
 - Preserve the hierarchy of headers
 - Keep all text exactly as shown in the table
-- Include empty cells in both rows and raw_data
-- Record the total number of header rows accurately"""
+- Record the total number of header rows accurately
+
+Here is an example of the output format you should return:
+{
+    "sections": [
+        {
+            "name": "POWER",
+            "start_row": 0,
+            "end_row": 5,
+            "properties": [
+                "Rated PTO power hp (SAE) at 2,100 engine rpm",
+                "Rated Engine power PS (hp ISO) at 2100 engine rpm (97/68/EC)",
+                "Max Engine power PS (hp ISO) at 1900 engine rpm (97/68/EC)",
+                "Intelligent Power Management (Available)",
+                "PTO torque rise",
+                "PTO power bulge"
+            ]
+        }
+    ],
+"""
 
                 # Create the message with image
                 message = {
@@ -189,7 +193,7 @@ Important:
                     
                     # Get the first response and convert to dict
                     if result and "responses" in result and len(result["responses"]) > 0:
-                        return TableData(**result["responses"][0].model_dump(exclude_none=True)).model_dump()
+                        return EnhancedTableStructure(**result["responses"][0].model_dump(exclude_none=True)).model_dump()
                     return None
 
                 except Exception as e:
