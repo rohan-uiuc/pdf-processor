@@ -1,27 +1,35 @@
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Union, List
 import logging
 import os
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel
-from typing import List
+from pydantic import BaseModel, Field
 
 from utils.logging_config import setup_detailed_logging
 
 logger = setup_detailed_logging()
 
-class FieldDefinition(BaseModel):
-    field_name: str
-    description: str
-    type: str
-    required: bool = False
-    example: str = ""
+class FieldType(BaseModel):
+    type: str = Field(description="The type of the field")
+    items: Optional[Union[str, 'NestedFieldDefinition']] = Field(description="The items of the field")
+    properties: Optional[Dict[str, 'NestedFieldDefinition']] = Field(description="The properties of the field")
+
+class NestedFieldDefinition(BaseModel):
+    field_name: str = Field(description="The name of the field")
+    description: str = Field(description="The description of the field")
+    type: FieldType = Field(description="The type of the field")
+    required: bool = Field(description="Whether the field is required")
+    # example: Union[str, dict, list] = ""
+    nested_fields: Optional[List['NestedFieldDefinition']] = Field(description="The nested fields of the field")
 
 class DocumentSchemaDefinition(BaseModel):
-    schema_type: str
-    schema_version: str
-    fields: List[FieldDefinition]
-    description: str
+    schema_type: str = Field(description="The type of the schema")
+    schema_version: str = Field(description="The version of the schema")
+    fields: List[NestedFieldDefinition] = Field(description="The fields of the schema")
+    description: str = Field(description="The description of the schema")
+
+# Required for forward references
+NestedFieldDefinition.model_rebuild()
 
 class SchemaProcessor:
     def __init__(self, engine=None):
@@ -96,39 +104,69 @@ class SchemaProcessor:
             for batch in chunk_batches:
                 sample_content = "\n\n".join(batch)
 
+                example_structure = '''
+                  {
+                    "field_name": "tractor",
+                    "type": {
+                      "type": "object",
+                      "properties": {
+                        "engine": {
+                          "type": "object",
+                          "properties": {...}
+                        },
+                        "features": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {...}
+                          }
+                        }
+                      }
+                    }
+                  }
+                '''
+
                 prompt = f"""
-                Analyze the content(chunks) of the given PDF document and generate a structured JSON schema that accurately represents key metadata, concepts, and attributes found within the document. The schema should reflect the actual content rather than just the structure.
+                Analyze the content(chunks) of the given PDF document and generate a structured, hierarchical JSON schema that accurately represents key metadata, concepts, attributes, and their relationships found within the document. The schema should capture both the structure and nested relationships.
 
                 ### **Instructions:**
-                1. **Identify the Core Topics & Themes**
-                - Determine the main subject of the document (e.g., technical specifications, research findings, product information).
-                - Identify the most important data points that should be structured into the schema.
+                1. **Identify Core Entities & Their Relationships**
+                - Determine the main entities in the document (e.g., Tractor, Engine, Transmission)
+                - Establish relationships between entities (e.g., Tractor has-one Engine, has-many Features)
+                - Create nested structures to represent these relationships
 
-                2. **Extract Key Concepts as Schema Fields**
-                - Define key metadata fields based on the document's core subject matter.
-                - If the document describes a **product**, focus on specifications, performance, and features.
-                - If the document is a **research paper**, focus on authors, methodology, findings, and references.
+                2. **Define Complex Types & Nested Structures**
+                - Use nested objects to represent complex entities
+                - Define arrays of objects for collections
+                - Capture hierarchical relationships in the type definitions
+                - Example structure:
+                  ```
+                {example_structure}
+                  ```
 
-                3. **Define Data Types & Relationships**
-                - Use appropriate data types such as `string`, `integer`, `boolean`, `array`, `object`.
-                - Structure technical information with **nested objects** where applicable.
+                3. **Extract Detailed Attributes**
+                - For each entity, identify all relevant attributes
+                - Group related attributes into nested objects
+                - Use appropriate data types (string, number, boolean, array, object)
+                - Include examples where possible
 
-                4. **Ensure Scalability**
-                - The schema should be adaptable to similar documents in the same category.
-                - Optional fields should be included to account for missing information.
+                4. **Define Relationships**
+                - Explicitly define relationships between entities in the relationships field
+                - Use descriptive relationship names (has-one, has-many, belongs-to)
+                - Ensure bidirectional relationships are captured
 
-                5. **Table Data**
-                - If the document contains tables, extract the table data and use it to define the schema.
-                - All the fields, rows, columns, headers, merged cells, and hierarchies should be captured.
+                5. **Table Data Processing**
+                - Convert table structures into nested object representations
+                - Preserve table hierarchies in the schema
+                - Capture relationships between table entities
 
-                Ensure that the schema accurately represents the content of the document. 
-                Return the schema as a DocumentSchemaDefinition with appropriate field definitions.
-                This is an iterative process where you will receive chunks of the document, so you should keep refining the schema until all the chunks are processed. 
-                Try not to remove any fields as you might have added them for a reason and they might be relevant to the document even if they are not present in the current chunk.
-                If existing fields look like they are not relevant, you can restructure the schema to put them where they are relevant but YOU MUST NOT REMOVE THEM.
-                If there is not much information in the chunk, you can skip it with the same schema.
-                Final aim of the schema generation is to capture nested information on the entities, their attributes, and their relationships, so if you see that the schema is not capturing nested information, you can restructure the schema to capture it.
+                Remember:
+                - Focus on creating deep, nested structures rather than flat fields
+                - Use the nested_fields property to create hierarchical relationships
+                - Define clear type definitions using the FieldType model
+                - Include relationship definitions in the schema
 
+                This is an iterative process - maintain existing fields and relationships while enhancing the schema with new information from each chunk.
 
                 PDF Content: {sample_content}
                 """
@@ -137,9 +175,9 @@ class SchemaProcessor:
                         "messages": [
                             {
                                 "role": "system",
-                                "content": "You are a schema definition expert.",
+                                "content": prompt,
                             },
-                            {"role": "user", "content": prompt},
+                            {"role": "user", "content": "Analyze the content and generate a schema for this tractor manual. "},
                         ],
                         "existing": {"DocumentSchemaDefinition": schema_object},
                     }
