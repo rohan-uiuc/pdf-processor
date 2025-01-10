@@ -439,7 +439,7 @@ async def extract_schema() -> tuple[str, list]:
                 logger.info(f"EXTRACTED SCHEMA: {schema}")
                 
                 # Update document with schema
-                metadata['schema'] = schema
+                metadata['schema'] = schema[0]
                 
                 doc.processing_artifacts = metadata
                 flag_modified(doc, "processing_artifacts")  # Mark the field as modified
@@ -507,7 +507,7 @@ async def extract_metadata() -> tuple[str, list]:
                 
                 # Update document with extracted metadata
 
-                metadata['extracted_metadata'] = extracted_metadata[0].metadata_list
+                metadata['extracted_metadata'] = extracted_metadata[0]["metadata_list"]
                 doc.processing_artifacts = metadata
                 flag_modified(doc, "processing_artifacts")  # Mark the field as modified
                 doc.db_save_status = 'completed'

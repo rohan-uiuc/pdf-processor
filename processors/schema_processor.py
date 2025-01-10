@@ -28,7 +28,7 @@ class SchemaProcessor:
         self.engine = engine
         self.client = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
 
-    async def define_schema(self, chunks: Dict[str, Any]) -> Dict[str, Any]:
+    async def define_schema(self, chunks: Dict[str, Any]) -> List[DocumentSchemaDefinition]:
         """Define document schema using trustcall."""
         try:
             # Create schema extractor if not exists
@@ -43,16 +43,9 @@ class SchemaProcessor:
                 )
 
             # Analyze document content to determine schema
-            #chunks = metadata.get("elements", [])
-            logger.info(f"Received {len(chunks)} chunks for schema definition")
-            #logger.info(f"Chunks: {chunks}")
-            
-            chunk_texts = [
-                chunk.content for chunk in chunks 
-            ]
-            sample_content = "\n\n".join(
-                chunk_texts[:6]
-            )  # Use first 5 chunks as sample
+            # sample_content = "\n\n".join(
+            #     chunk_texts[:6]
+            # )  # Use first 5 chunks as sample
 
             # prompt = f"""You are an expert in tractor specifications and documentation. Your task is to analyze high quality documents from tractor manuals and brochures to create a comprehensive schema for tractor metadata.
             # Examine the provided text carefully and identify ALL possible metadata fields relevant to tractors, their components, their configurations, performance metrics, compliance information, and more. Your schema should include, but is not limited to, the following categories:
@@ -80,54 +73,65 @@ class SchemaProcessor:
             # Return as a DocumentSchemaDefinition with appropriate field definitions.
             # """
 
-            prompt = f"""
-            Analyze the content of the given PDF document and generate a structured JSON schema that accurately represents key metadata, concepts, and attributes found within the document. The schema should reflect the actual content rather than just the structure.
+            chunk_texts = [
+                chunk.content for chunk in chunks 
+            ]
+            batch_size = 5
+            schema_object = DocumentSchemaDefinition(schema_type="", schema_version="", fields=[], description="")
+            for i in range(0, len(chunk_texts), batch_size):
+                batch = chunk_texts[i : i + batch_size]
+                sample_content = "\n\n".join(batch)
 
-            ### **Instructions:**
-            1. **Identify the Core Topics & Themes**
-            - Determine the main subject of the document (e.g., technical specifications, research findings, product information).
-            - Identify the most important data points that should be structured into the schema.
+                prompt = f"""
+                Analyze the content of the given PDF document and generate a structured JSON schema that accurately represents key metadata, concepts, and attributes found within the document. The schema should reflect the actual content rather than just the structure.
 
-            2. **Extract Key Concepts as Schema Fields**
-            - Define key metadata fields based on the document's core subject matter.
-            - If the document describes a **product**, focus on specifications, performance, and features.
-            - If the document is a **research paper**, focus on authors, methodology, findings, and references.
+                ### **Instructions:**
+                1. **Identify the Core Topics & Themes**
+                - Determine the main subject of the document (e.g., technical specifications, research findings, product information).
+                - Identify the most important data points that should be structured into the schema.
 
-            3. **Define Data Types & Relationships**
-            - Use appropriate data types such as `string`, `integer`, `boolean`, `array`, `object`.
-            - Structure technical information with **nested objects** where applicable.
+                2. **Extract Key Concepts as Schema Fields**
+                - Define key metadata fields based on the document's core subject matter.
+                - If the document describes a **product**, focus on specifications, performance, and features.
+                - If the document is a **research paper**, focus on authors, methodology, findings, and references.
 
-            4. **Ensure Scalability**
-            - The schema should be adaptable to similar documents in the same category.
-            - Optional fields should be included to account for missing information.
+                3. **Define Data Types & Relationships**
+                - Use appropriate data types such as `string`, `integer`, `boolean`, `array`, `object`.
+                - Structure technical information with **nested objects** where applicable.
 
-            Ensure that the schema accurately represents the content of the document. 
-            Return the schema as a DocumentSchemaDefinition with appropriate field definitions.
+                4. **Ensure Scalability**
+                - The schema should be adaptable to similar documents in the same category.
+                - Optional fields should be included to account for missing information.
 
-            PDF Content: {sample_content}
-            """
+                Ensure that the schema accurately represents the content of the document. 
+                Return the schema as a DocumentSchemaDefinition with appropriate field definitions.
 
+                PDF Content: {sample_content}
+                """
+                result = await self.schema_extractor.ainvoke(
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are a schema definition expert.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "existing": {"DocumentSchemaDefinition": schema_object},
+                    }
+                )
 
-            logger.info(f"Schema definition prompt: {prompt}")
+                logger.info(f"Schema Generation Result: {result}")
 
-            result = await self.schema_extractor.ainvoke(
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are a schema definition expert.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "existing": {},
-                }
-            )
+                if result and result.get("responses"):
+                    schema_object = DocumentSchemaDefinition(**result["responses"][0].model_dump())
+                    
 
-            if not result or not result.get("responses"):
-                raise ValueError("No schema definition generated")
+                # if not result or not result.get("responses"):
+                #     raise ValueError("No schema definition generated")
 
-            schema_def = result["responses"][0]
-            return schema_def.model_dump()
+            #schema_def = result["responses"][0]
+            return [schema_object.model_dump()]
 
         except Exception as e:
             self.logger.error(f"Error defining schema: {str(e)}")
