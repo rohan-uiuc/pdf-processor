@@ -97,7 +97,7 @@ class SchemaProcessor:
                 sample_content = "\n\n".join(batch)
 
                 prompt = f"""
-                Analyze the content of the given PDF document and generate a structured JSON schema that accurately represents key metadata, concepts, and attributes found within the document. The schema should reflect the actual content rather than just the structure.
+                Analyze the content(chunks) of the given PDF document and generate a structured JSON schema that accurately represents key metadata, concepts, and attributes found within the document. The schema should reflect the actual content rather than just the structure.
 
                 ### **Instructions:**
                 1. **Identify the Core Topics & Themes**
@@ -125,6 +125,10 @@ class SchemaProcessor:
                 Return the schema as a DocumentSchemaDefinition with appropriate field definitions.
                 This is an iterative process where you will receive chunks of the document, so you should keep refining the schema until all the chunks are processed. 
                 Try not to remove any fields as you might have added them for a reason and they might be relevant to the document even if they are not present in the current chunk.
+                If existing fields look like they are not relevant, you can restructure the schema to put them where they are relevant but YOU MUST NOT REMOVE THEM.
+                If there is not much information in the chunk, you can skip it with the same schema.
+                Final aim of the schema generation is to capture nested information on the entities, their attributes, and their relationships, so if you see that the schema is not capturing nested information, you can restructure the schema to capture it.
+
 
                 PDF Content: {sample_content}
                 """
