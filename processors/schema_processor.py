@@ -74,7 +74,8 @@ class SchemaProcessor:
             # """
 
             chunk_texts = [
-                chunk.content for chunk in chunks 
+                    chunk.table_data if chunk.chunk_type == 'TableChunk' else chunk.content
+                    for chunk in chunks
             ]
             batch_size = 5
             schema_object = DocumentSchemaDefinition(schema_type="", schema_version="", fields=[], description="")

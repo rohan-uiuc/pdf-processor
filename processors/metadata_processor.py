@@ -56,8 +56,12 @@ class MetadataProcessor:
                 logger.info(f"Metadata list object:  {metadata_list_obj}\n\n")
                 batch = chunks[i : i + batch_size]
 
+                # chunk_texts = [
+                #     f"[Chunk {chunk.get('element_id', i)}]\n{chunk['text']}"
+                #     for chunk in batch
+                # ]
                 chunk_texts = [
-                    f"[Chunk {chunk.get('element_id', i)}]\n{chunk['text']}"
+                    chunk.table_data if chunk.chunk_type == 'TableChunk' else chunk.content
                     for chunk in batch
                 ]
 

@@ -491,6 +491,9 @@ async def extract_metadata() -> tuple[str, list]:
         
         for doc in docs:
             try:
+                # fetch related chunks here
+                chunks = session.query(Chunk).filter(Chunk.document_id == doc.id).all()
+
                 metadata = doc.processing_artifacts
                 schema = metadata.get('schema')
                 
@@ -501,7 +504,7 @@ async def extract_metadata() -> tuple[str, list]:
                 
                 # Extract metadata using trustcall
                 extracted_metadata: DocumentMetadataExtraction = await state.metadata_processor.extract_metadata(
-                    doc.id, schema, metadata.get('elements', [])
+                    doc.id, schema, chunks
                 )
                 logger.info(f"EXTRACTED METADATA: {extracted_metadata}")
                 
