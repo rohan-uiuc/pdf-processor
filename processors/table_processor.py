@@ -39,28 +39,66 @@ logger = setup_detailed_logging()
 #     class Config:
 #         extra = "allow"  # Allow extra fields in the response
 
-class TableCell(BaseModel):
-    value: str = Field(description="Cell content")
-    row_index: int = Field(description="0-based row index")
-    col_index: int = Field(description="0-based column index")
-    is_header: bool = Field(description="Whether this cell is a header")
-    is_merged: bool = Field(description="Whether this cell is part of a merged group")
-    parent_section: Optional[str] = Field(description="Parent section/category this cell belongs to")
-    data_type: str = Field(description="Type of data in cell (text, number, etc.)")
+# class TableCell(BaseModel):
+#     value: str = Field(description="Cell content")
+#     row_index: int = Field(description="0-based row index")
+#     col_index: int = Field(description="0-based column index")
+#     is_header: bool = Field(description="Whether this cell is a header")
+#     is_merged: bool = Field(description="Whether this cell is part of a merged group")
+#     parent_section: Optional[str] = Field(description="Parent section/category this cell belongs to")
+#     data_type: str = Field(description="Type of data in cell (text, number, etc.)")
     
-class TableSection(BaseModel):
-    name: str = Field(description="Section name (e.g., 'POWER', 'TRANSMISSION')")
-    start_row: int = Field(description="Starting row of section")
-    end_row: int = Field(description="Ending row of section")
-    properties: List[str] = Field(description="List of property names in this section")
+# class TableSection(BaseModel):
+#     name: str = Field(description="Section name (e.g., 'POWER', 'TRANSMISSION')")
+#     start_row: int = Field(description="Starting row of section")
+#     end_row: int = Field(description="Ending row of section")
+#     properties: List[str] = Field(description="List of property names in this section")
     
-class EnhancedTableStructure(BaseModel):
-    sections: List[TableSection] = Field(description="Table sections/categories")
-    cell_matrix: List[List[TableCell]] = Field(description="2D matrix of all cells")
-    primary_headers: List[str] = Field(description="Top-level headers")
-    sub_headers: Dict[str, List[str]] = Field(description="Nested header relationships")
-    section_relationships: Dict[str, List[str]] = Field(description="How sections relate to headers")
-    data_hierarchy: Dict[str, Any] = Field(description="Tree structure of data relationships")
+# class EnhancedTableStructure(BaseModel):
+#     sections: List[TableSection] = Field(description="Table sections/categories")
+#     cell_matrix: List[List[TableCell]] = Field(description="2D matrix of all cells")
+#     primary_headers: List[str] = Field(description="Top-level headers")
+#     # sub_headers: Dict[str, List[str]] = Field(description="Nested header relationships")
+#     section_relationships: Dict[str, List[str]] = Field(description="How sections relate to headers")
+#     data_hierarchy: Dict[str, Any] = Field(description="Tree structure of data relationships")
+
+class TableValue(BaseModel):
+    value: str = Field(description="The actual value for this field")
+
+class TableData(BaseModel):
+    """
+    A generic nested structure where:
+    - First level is the primary column values (could be model numbers, years, categories, etc.)
+    - Second level is sections/groups in the table
+    - Third level is the actual field-value pairs
+    """
+    data: Dict[str, Dict[str, Dict[str, str]]] = Field(
+        description="Nested structure: primary_key -> section -> {field: value}"
+    )
+
+    class Config:
+        extra = "allow"
+        json_schema_extra = {
+            "example": {
+                "data": {
+                    "Model A": {  # Could be any primary key (model, year, category)
+                        "Section 1": {
+                            "Field 1": "Value 1",
+                            "Field 2": "Value 2"
+                        },
+                        "Section 2": {
+                            "Field 3": "Value 3"
+                        }
+                    },
+                    "Model B": {
+                        "Section 1": {
+                            "Field 1": "Value 4",
+                            "Field 2": "Value 5"
+                        }
+                    }
+                }
+            }
+        }
 
 class TableProcessor:
     def __init__(self, engine=None):
@@ -74,8 +112,8 @@ class TableProcessor:
         # Initialize Trustcall extractor with our TableData schema
         self.extractor = create_extractor(
             self.client,
-            tools=[EnhancedTableStructure],
-            tool_choice="EnhancedTableStructure"
+            tools=[TableData],
+            tool_choice="TableData"
         )
 
     async def process_table_with_vision(self, image_path: str) -> Optional[Dict]:
@@ -85,80 +123,75 @@ class TableProcessor:
                 image_data = base64.b64encode(image_file.read()).decode()
 
                 prompt = """
-                You are an expert at analyzing tables and extracting structured data.
-                Extract ALL structural details from the table image, including headers, rows, merged cells, and hierarchies sequentially.
-                You must return a valid JSON object that captures ALL structural details. Follow these instructions religiously!
-                Make sure to capture all cells, rows, columns, headers, merged cells, and hierarchies, and relationships between them, DO NOT skip any.
-Instructions:
-1. SECTION IDENTIFICATION
-- First identify distinct table sections (groups of related rows)
-- Note where each section starts and ends
-- Identify the hierarchy of sections
+You are an expert at analyzing tables and extracting structured data into clean, hierarchical formats.
+Your task is to convert the table into a nested structure that preserves all values while being easy to query.
 
-2. HEADER ANALYSIS
-- Identify all column headers at each level
-- Map relationships between header levels
-- Note which headers apply to which sections
-
-3. MERGED CELL PROCESSING
-- Identify all merged cells (both horizontal and vertical)
-- Determine if merged cells are headers or data
-- Map merged cells to their respective sections
-- Repeat the values for individual cells that are part of a merged group such that all the values mapping to a particular row and column are accurately captured.
-
-4. DATA STRUCTURE MAPPING
-- Create a cell matrix preserving all relationships
-- Map each cell to its correct headers and section
-- Preserve the parent-child relationships
-
-5. SEMANTIC GROUPING
-- Group related data fields
-- Identify dependent fields
-- Map field relationships within sections
-
-For each cell, provide:
+Output Format:
 {
-    "value": "actual content",
-    "row_index": 0,
-    "col_index": 0,
-    "is_header": false,
-    "is_merged": false,
-    "parent_section": "section name",
-    "data_type": "text/number/etc"
-}
-
-For each section, provide:
-{
-    "name": "section name",
-    "start_row": 0,
-    "end_row": 5,
-    "properties": ["prop1", "prop2"]
-}
-
-Important:
-- Capture ALL merged cells with their exact positions and content
-- Track both horizontal (column) and vertical (row) spans
-- Preserve the hierarchy of headers
-- Keep all text exactly as shown in the table
-- Record the total number of header rows accurately
-
-Here is an example of the output format you should return:
-{
-    "sections": [
-        {
-            "name": "POWER",
-            "start_row": 0,
-            "end_row": 5,
-            "properties": [
-                "Rated PTO power hp (SAE) at 2,100 engine rpm",
-                "Rated Engine power PS (hp ISO) at 2100 engine rpm (97/68/EC)",
-                "Max Engine power PS (hp ISO) at 1900 engine rpm (97/68/EC)",
-                "Intelligent Power Management (Available)",
-                "PTO torque rise",
-                "PTO power bulge"
-            ]
+    "data": {
+        "<primary_key>": {            # This is the column header/identifier (like model number, year, etc.)
+            "<section_name>": {        # Table sections or categories (like POWER, TRANSMISSION)
+                "<field_name>": "<value>"  # Actual field-value pairs
+            }
         }
-    ],
+    }
+}
+
+Important Instructions:
+1. PRIMARY KEY IDENTIFICATION
+   - Identify the main column headers that serve as primary keys
+   - These are usually model numbers, years, or categories that differentiate columns
+
+2. SECTION IDENTIFICATION
+   - Identify distinct table sections (usually with different background colors or bold headers)
+   - Each section should group related fields together
+
+3. VALUE MAPPING
+   - For each primary key (column) and section:
+     * Map every field to its exact value
+     * Keep text exactly as shown
+     * Include units where present
+     * Preserve all numerical values and formats
+
+4. MERGED CELL HANDLING
+   - If a cell is merged across columns:
+     * Repeat the value for each applicable primary key
+   - If a cell is merged across rows:
+     * Include it in each relevant field-value pair
+
+Example Output:
+{
+    "data": {
+        "8320RT": {
+            "POWER": {
+                "Rated PTO power hp (SAE) at 2,100 engine rpm": "264 hp (196 kW)",
+                "Rated Engine power PS (hp ISO) at 2100 engine rpm (97/68/EC)": "320 hp (235 kW)",
+                "Intelligent Power Management (Available)": "35 additional engine horsepower at 2,100 rpm rated speed",
+                "PTO torque rise": "40%"
+            },
+            "TRANSMISSION": {
+                "Type": "Standard (42 km/h at 1,550 ECO erpm)"
+            }
+        },
+        "8345RT": {
+            "POWER": {
+                "Rated PTO power hp (SAE) at 2,100 engine rpm": "286 hp (213 kW)",
+                "Rated Engine power PS (hp ISO) at 2100 engine rpm (97/68/EC)": "345 hp (254 kW)",
+                "Intelligent Power Management (Available)": "35 additional engine horsepower at 2,100 rpm rated speed",
+                "PTO torque rise": "40%"
+            }
+        }
+    }
+}
+
+Critical Requirements:
+- Preserve exact text and values
+- Include all fields and values
+- Maintain section grouping
+- Handle merged cells by repeating values
+- Keep numerical values and units intact
+- Don't skip any rows or columns
+- Don't summarize or modify values
 """
 
                 # Create the message with image
@@ -193,7 +226,7 @@ Here is an example of the output format you should return:
                     
                     # Get the first response and convert to dict
                     if result and "responses" in result and len(result["responses"]) > 0:
-                        return EnhancedTableStructure(**result["responses"][0].model_dump(exclude_none=True)).model_dump()
+                        return TableData(**result["responses"][0].model_dump(exclude_none=True)).model_dump()
                     return None
 
                 except Exception as e:
