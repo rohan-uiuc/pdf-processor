@@ -55,7 +55,7 @@ class TableProcessor:
             tool_choice="TableData"
         )
 
-    async def process_table_with_vision(self, image_path: str, table_html: str) -> Optional[TableData]:
+    async def process_table_with_vision(self, image_path: str) -> Optional[TableData]:
         """Process table using image with GPT-4V."""
         try:
             with open(image_path, "rb") as image_file:
@@ -245,9 +245,8 @@ Important:
                                     continue
 
                                 structured_data = await self.process_table_with_vision(
-                                    image_path,
-                                    ""  # Removed table_html parameter
-                                )
+                                    image_path
+                                ).model_dump()
 
                                 if structured_data:
                                     chunk_results.append(structured_data)
