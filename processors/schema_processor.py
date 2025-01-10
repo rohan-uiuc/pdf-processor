@@ -123,6 +123,8 @@ class SchemaProcessor:
 
                 Ensure that the schema accurately represents the content of the document. 
                 Return the schema as a DocumentSchemaDefinition with appropriate field definitions.
+                This is an iterative process where you will receive chunks of the document, so you should keep refining the schema until all the chunks are processed. 
+                Try not to remove any fields as you might have added them for a reason and they might be relevant to the document even if they are not present in the current chunk.
 
                 PDF Content: {sample_content}
                 """
