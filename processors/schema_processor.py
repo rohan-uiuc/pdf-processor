@@ -73,13 +73,26 @@ class SchemaProcessor:
             # Return as a DocumentSchemaDefinition with appropriate field definitions.
             # """
 
-            chunk_texts = [
-                chunk.content for chunk in chunks 
-            ]
+            # Separate table chunks and content chunks
+            table_chunks = [chunk for chunk in chunks if chunk.chunk_type in ['Table', 'TableChunk']]
+            content_chunks = [chunk for chunk in chunks if chunk.chunk_type not in ['Table', 'TableChunk']]
+
+            # Process content chunks in batches
+            content_texts = [chunk.content for chunk in content_chunks]
             batch_size = 5
+
+            # Initialize schema object
             schema_object = DocumentSchemaDefinition(schema_type="", schema_version="", fields=[], description="")
-            for i in range(0, len(chunk_texts), batch_size):
-                batch = chunk_texts[i : i + batch_size]
+
+            # Process tables individually and content in batches
+            chunk_batches = (
+                # Process each table chunk individually
+                [[chunk.table_data] for chunk in table_chunks] +
+                # Process content chunks in batches
+                [content_texts[i:i + batch_size] for i in range(0, len(content_texts), batch_size)]
+            )
+
+            for batch in chunk_batches:
                 sample_content = "\n\n".join(batch)
 
                 prompt = f"""
@@ -102,6 +115,10 @@ class SchemaProcessor:
                 4. **Ensure Scalability**
                 - The schema should be adaptable to similar documents in the same category.
                 - Optional fields should be included to account for missing information.
+
+                5. **Table Data**
+                - If the document contains tables, extract the table data and use it to define the schema.
+                - All the fields, rows, columns, headers, merged cells, and hierarchies should be captured.
 
                 Ensure that the schema accurately represents the content of the document. 
                 Return the schema as a DocumentSchemaDefinition with appropriate field definitions.
