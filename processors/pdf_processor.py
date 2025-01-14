@@ -103,7 +103,7 @@ class PDFProcessor:
 
                 # Set environment variables for image padding
                 os.environ["EXTRACT_IMAGE_BLOCK_CROP_HORIZONTAL_PAD"] = "20"
-                os.environ["EXTRACT_IMAGE_BLOCK_CROP_VERTICAL_PAD"] = "10"
+                os.environ["EXTRACT_IMAGE_BLOCK_CROP_VERTICAL_PAD"] = "40"
 
                 elements = partition_pdf(
                     filename=file_path,
