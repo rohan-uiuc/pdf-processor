@@ -201,7 +201,7 @@ class DocumentMetadataProcessor:
                                         {"role": "system", "content": prompt},
                                         {
                                             "role": "user",
-                                            "content": "Extract structured metadata from this content, preserving all technical specifications and relationships:\n\n"
+                                            "content": "Extract all tractor specifications, their component parts, their attributes, and components' attributes and their relationships in a nested structure:\n\n"
                                             + "\n\n".join(batch),
                                         },
                                     ],
