@@ -1,7 +1,7 @@
 from sqlalchemy import ARRAY, create_engine, Column, Integer, String, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import os
 import time
@@ -83,17 +83,15 @@ class DocumentMetadata(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     document_id = Column(Integer, ForeignKey('cedar_documents.id', ondelete='CASCADE'), nullable=False)
-    segment_id = Column(Integer, ForeignKey('cedar_segments.id', ondelete='CASCADE'), nullable=True)
-    chunk_id = Column(Integer, ForeignKey('cedar_chunks.id', ondelete='CASCADE'), nullable=True)
+    # segment_id = Column(Integer, ForeignKey('cedar_segments.id', ondelete='CASCADE'), nullable=True)
+    # chunk_id = Column(Integer, ForeignKey('cedar_chunks.id', ondelete='CASCADE'), nullable=True)
     field_name = Column(String, nullable=False)
     field_value = Column(JSON, nullable=True)
     confidence_score = Column(Integer, nullable=True)  # 0-100
     extraction_method = Column(String, nullable=True)  # e.g., 'gpt-4', 'rule-based', etc.
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now(timezone.utc))
     
     document = relationship("Document", back_populates="metadata_entries")
-    segment = relationship("Segment")
-    chunk = relationship("Chunk")
 
 def init_db(db_path=None, force_recreate=False, max_retries=5, retry_delay=2):
     """Initialize database with environment variable support and connection retries."""
@@ -101,6 +99,7 @@ def init_db(db_path=None, force_recreate=False, max_retries=5, retry_delay=2):
         # Default to local Supabase PostgreSQL connection
         db_path = os.getenv('DATABASE_URL', 
                            'postgresql://postgres:postgres@supabase_default:5432/postgres')
+        logger.info(f"Using database path: {db_path}")
     
     logger.info(f"Initializing database at {db_path}")
     
