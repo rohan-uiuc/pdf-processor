@@ -252,11 +252,9 @@ class DocumentMetadataProcessor:
 
                     if existing_metadata:
                         # Store the structured format in processing_artifacts
-                        doc.processing_artifacts = {
-                            "metadata": {
-                                "processed_at": datetime.now(timezone.utc).isoformat(),
-                                "results": existing_metadata,
-                            }
+                        doc.processing_artifacts["metadata"] = {
+                            "processed_at": datetime.now(timezone.utc).isoformat(),
+                            "results": existing_metadata,
                         }
                         doc.metadata_status = "completed"
                         flag_modified(doc, "processing_artifacts")  # Mark the field as modified
