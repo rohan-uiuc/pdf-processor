@@ -191,6 +191,7 @@ class DocumentMetadataProcessor:
                         - Keep formatting and units intact
                         - Don't skip any information
                         - Don't summarize or modify values
+                        - Preserve all specifications, details, attributes, and relationships
                         """
 
                         try:
@@ -201,7 +202,7 @@ class DocumentMetadataProcessor:
                                         {"role": "system", "content": prompt},
                                         {
                                             "role": "user",
-                                            "content": "Extract all tractor specifications, their component parts, their attributes, and components' attributes and their relationships in a nested structure:\n\n"
+                                            "content": "Extract structured tractor metadata with all models at the top level, and their components and attributes and their relationships in a nested structure:\n\n"
                                             + "\n\n".join(batch),
                                         },
                                     ],
