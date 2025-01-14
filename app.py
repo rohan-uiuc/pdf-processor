@@ -17,6 +17,7 @@ from unstructured.staging.base import elements_from_base64_gzipped_json
 from sqlalchemy.orm.attributes import flag_modified
 
 from processors.metadata_processor import DocumentMetadataExtraction
+from processors.document_metadata_processor import DocumentMetadataProcessor
 
 
 # Load environment variables
@@ -41,6 +42,7 @@ class ProcessingState:
         self.table_processor = TableProcessor(engine=engine)
         self.schema_processor = SchemaProcessor(engine=engine)
         self.metadata_processor = MetadataProcessor(engine=engine)
+        self.document_metadata_processor = DocumentMetadataProcessor(engine=engine)
 
 state = ProcessingState()
 
@@ -595,8 +597,9 @@ def get_document_status():
                 doc.chunk_status or "pending",
                 doc.table_status or "pending",
                 doc.db_save_status or "pending",
+                doc.metadata_status or "pending",
                 doc.last_error or "",
-                "🗑️ Delete"  # Moved delete button to the end
+                "🗑️ Delete"  # Delete button
             ])
         return status_data
     finally:
@@ -615,6 +618,37 @@ def handle_delete_click(evt: gr.SelectData, status_table) -> tuple[str, list]:
         logger.error(f"Error in delete handler: {str(e)}")
         return f"Error deleting document: {str(e)}", get_document_status()
     return None, get_document_status()
+
+async def extract_document_metadata() -> tuple[str, list]:
+    """Extract structured metadata from documents."""
+    session = get_session(engine)
+    try:
+        output = "Document Metadata Extraction Results:\n\n"
+        
+        # Process metadata
+        results = await state.document_metadata_processor.process_documents()
+        
+        if not results:
+            return "No documents were processed.", get_document_status()
+            
+        # Format output message
+        for result in results:
+            if 'error' in result:
+                output += f"Error processing document {result['document_id']}: {result['error']}\n"
+            else:
+                output += f"Document {result['document_id']}: Processed {result.get('processed_chunks', 0)} chunks\n"
+            output += "-" * 50 + "\n"
+        
+        # Get updated status data
+        status_data = get_document_status()
+        
+        return output, status_data
+        
+    except Exception as e:
+        logger.error(f"Error in extract_document_metadata: {str(e)}", exc_info=True)
+        return f"Error extracting metadata: {str(e)}", []
+    finally:
+        session.close()
 
 def create_gradio_interface():
     """Create the Gradio interface for the PDF processor."""
@@ -641,6 +675,7 @@ def create_gradio_interface():
                 table_btn = gr.Button("3. Process Tables", variant="primary")
                 schema_btn = gr.Button("4. Extract Schema", variant="primary")
                 metadata_btn = gr.Button("5. Extract Metadata", variant="primary")
+                doc_metadata_btn = gr.Button("6. Extract Document Metadata", variant="primary")
             
             output_text = gr.Textbox(
                 label="Processing Output",
@@ -663,10 +698,11 @@ def create_gradio_interface():
                     "Chunk Status",
                     "Table Status",
                     "DB Status",
+                    "Metadata Status",
                     "Last Error",
                     "Actions"  # Moved to end
                 ],
-                datatype=["str", "str", "str", "str", "str", "str", "str"],
+                datatype=["str", "str", "str", "str", "str", "str", "str", "str"],
                 value=get_document_status,
                 interactive=True,
                 wrap=True
@@ -695,6 +731,11 @@ def create_gradio_interface():
         )
         metadata_btn.click(
             fn=extract_metadata,
+            inputs=[],
+            outputs=[output_text, status_table]
+        )
+        doc_metadata_btn.click(
+            fn=extract_document_metadata,
             inputs=[],
             outputs=[output_text, status_table]
         )
